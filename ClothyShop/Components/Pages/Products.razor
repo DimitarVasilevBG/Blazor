@@ -1,0 +1,145 @@
+﻿@page "/products"
+@inject ProductService ProductService
+@inject CartService CartService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavigationManager
+
+@using Microsoft.AspNetCore.SignalR.Client
+
+@rendermode InteractiveServer
+
+<h3>Products</h3>
+
+<div class="input-group mb-4">
+    <input type="text"
+           class="form-control"
+           placeholder="Search products..."
+           @bind="ProductFilter"
+           @bind:event="oninput" />
+</div>
+
+@if (products == null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <div class="row row-cols-1 row-cols-md-3 g-4">
+        @foreach (var product in products)
+        {
+            <div class="col">
+                <div class="card h-100 shadow-sm border-0">
+                    <div class="card-body">
+                        <h5 class="card-title">@product.Name</h5>
+                        <p class="card-text text-muted">@product.Description</p>
+                        <p class="fw-bold text-primary mb-1">$@product.Price</p>
+                        <span class="badge bg-secondary">@product.Category</span>
+                    </div>
+                    <div class="card-footer bg-white border-0 d-flex justify-content-between">
+                        <a class="btn btn-sm btn-outline-primary" href="/products/@product.Id">Edit</a>
+                        <button class="btn btn-sm btn-success" @onclick="() => AddToCartAsync(product)">Add to Cart</button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private HubConnection? hubConnection;
+    private string _productFilter = string.Empty;  
+    private List<Product> allProducts = new(); 
+    private List<Product> products = new();    
+
+    private string ProductFilter
+    {
+        get => _productFilter;
+        set
+        {
+            if (_productFilter == value) return; 
+            _productFilter = value;
+            ApplyFilter();                       
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProductsAsync();
+        await InitializeSignalRAsync();
+    }
+
+    private async Task LoadProductsAsync()
+    {
+        allProducts = await ProductService.GetAllProductsAsync();
+        ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        if (string.IsNullOrWhiteSpace(ProductFilter))
+        {
+            products = allProducts.ToList();
+        }
+        else
+        {
+            var filter = ProductFilter.Trim().ToLower();
+            products = allProducts
+                .Where(p =>
+                    p.Name.ToLower().Contains(filter) ||
+                    (p.Description?.ToLower().Contains(filter) ?? false) ||
+                    p.Category.ToLower().Contains(filter))
+                .ToList();
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task InitializeSignalRAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+        .WithUrl(NavigationManager.ToAbsoluteUri("/productHub"))
+        .WithAutomaticReconnect()
+        .Build();
+
+        hubConnection.On<List<Product>>("ProductsUpdated", updatedProducts =>
+        {
+            InvokeAsync(() =>
+            {
+                foreach (var updated in updatedProducts)
+                {
+                    var existing = allProducts.FirstOrDefault(p => p.Id == updated.Id);
+                    if (existing != null && existing.Price != updated.Price)
+                    {
+                        existing.Price = updated.Price; // cast double back to decimal
+                    }
+                }
+
+                ApplyFilter(); // rebuild filtered list and refresh UI
+            });
+        });
+
+
+        await hubConnection.StartAsync();
+    }
+
+    private async Task AddToCartAsync(Product product)
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (!user.Identity?.IsAuthenticated ?? true)
+        {
+            NavigationManager.NavigateTo("/login");
+            return;
+        }
+
+        var userId = user.Identity?.Name ?? string.Empty;
+        await CartService.AddToCartAsync(userId, product.Id, 1);
+    }
+
+    private async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+            await hubConnection.DisposeAsync();
+    }
+}

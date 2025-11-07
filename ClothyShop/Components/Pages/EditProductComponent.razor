@@ -1,0 +1,72 @@
+﻿@page "/products/{ID}"
+
+@inject ProductService ProductService
+@inject NavigationManager NavigationManager
+
+@rendermode InteractiveServer
+
+<h3>Edit Product</h3>
+
+@if (product != null)
+{
+    <EditForm Model="product" OnValidSubmit="Submit" FormName="EditProductForm">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <InputText @bind-Value="product.Id" hidden />
+
+        <div class="row mb-3">
+            <div class="col-2">
+                <label class="col-form-label">Name</label>
+            </div>
+            <div class="col-6">
+                <InputText class="form-control" @bind-Value="product.Name" />
+            </div>
+            <div class="col">
+                <ValidationMessage For="() => product.Name" />
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-2">
+                <label class="col-form-label">Price</label>
+            </div>
+            <div class="col-6">
+                <InputNumber class="form-control" @bind-Value="product.Price" />
+            </div>
+            <div class="col">
+                <ValidationMessage For="() => product.Price" />
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Update</button>
+    </EditForm>
+}
+else
+{
+    <p>Loading product...</p>
+}
+
+@code {
+    [Parameter]
+    public string ID { get; set; }
+
+    private Product? product;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (product == null)
+        {
+            product = await ProductService.GetByIDAsync(ID);
+        }
+    }
+
+    private async Task Submit()
+    {
+        if (product != null)
+        {
+            await ProductService.UpdateAsync(product);
+            NavigationManager.NavigateTo("/products");
+        }
+    }
+}

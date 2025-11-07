@@ -1,0 +1,84 @@
+﻿@page "/cart"
+@inject CartService CartService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavigationManager
+
+<h3>Your Shopping Cart</h3>
+
+@rendermode InteractiveServer
+
+@if (!isAuthenticated)
+{
+    <div class="alert alert-warning">
+        Please <a href="/login">log in</a> to view your cart.
+    </div>
+}
+else if (cartItems == null)
+{
+    <p>Loading...</p>
+}
+else if (cartItems.Count == 0)
+{
+    <div class="alert alert-info">
+        Your cart is empty. <a href="/products">Go shopping!</a>
+    </div>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Product</th>
+                <th>Quantity</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in cartItems)
+            {
+                <tr>
+                    <td>@item.ProductId</td> <!-- replace with Product.Name if you load product details -->
+                    <td>@item.Quantity</td>
+                    <td>
+                        <button class="btn btn-sm btn-danger" @onclick="() => RemoveFromCart(item.ProductId)">
+                            Remove
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <button class="btn btn-success">Checkout</button>
+}
+
+@code {
+    private List<CartProductItem> cartItems;
+    private bool isAuthenticated;
+    private string userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated ?? false)
+        {
+            isAuthenticated = true;
+            userId = user.Identity.Name; // could also use claim "sub" or email
+            cartItems = await CartService.GetCartAsync(userId);
+        }
+        else
+        {
+            isAuthenticated = false;
+        }
+    }
+
+    private async Task RemoveFromCart(string productId)
+    {
+        if (!isAuthenticated) return;
+
+        await CartService.RemoveFromCartAsync(userId, productId);
+        cartItems = await CartService.GetCartAsync(userId);
+    }
+}
