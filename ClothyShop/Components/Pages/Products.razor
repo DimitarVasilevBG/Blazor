@@ -3,12 +3,20 @@
 @inject CartService CartService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager NavigationManager
+@inject IJSRuntime JS
 
 @using Microsoft.AspNetCore.SignalR.Client
 
 @rendermode InteractiveServer
 
 <h3>Products</h3>
+
+@if (!string.IsNullOrEmpty(latestSystemAlert))
+{
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        @latestSystemAlert
+    </div>
+}
 
 <div class="input-group mb-4">
     <input type="text"
@@ -37,6 +45,9 @@ else
                     </div>
                     <div class="card-footer bg-white border-0 d-flex justify-content-between">
                         <a class="btn btn-sm btn-outline-primary" href="/products/@product.Id">Edit</a>
+
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => FlagProductAsync(product)">Flag Issue</button>
+
                         <button class="btn btn-sm btn-success" @onclick="() => AddToCartAsync(product)">Add to Cart</button>
                     </div>
                 </div>
@@ -49,7 +60,8 @@ else
     private HubConnection? hubConnection;
     private string _productFilter = string.Empty;  
     private List<Product> allProducts = new(); 
-    private List<Product> products = new();    
+    private List<Product> products = new();  
+    private string? latestSystemAlert;
 
     private string ProductFilter
     {
@@ -119,7 +131,30 @@ else
         });
 
 
+        hubConnection.On<string>("ReceiveSystemAlert", alert =>
+        {
+            InvokeAsync(() =>
+            {
+                latestSystemAlert = alert;
+                StateHasChanged();
+            });
+        });
+
+
         await hubConnection.StartAsync();
+    }
+
+    private async Task FlagProductAsync(Product product)
+    {
+        if (hubConnection is not null && hubConnection.State == HubConnectionState.Connected)
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            var userEmail = user.Identity?.IsAuthenticated == true ? user.Identity.Name : "Anonymous Buyer";
+
+            // This line pushes data parameters explicitly up to your Backend Hub method!
+            await hubConnection.SendAsync("ReportProductIssue", product.Name, userEmail);
+        }
     }
 
     private async Task AddToCartAsync(Product product)
@@ -135,6 +170,9 @@ else
 
         var userId = user.Identity?.Name ?? string.Empty;
         await CartService.AddToCartAsync(userId, product.Id, 1);
+
+        // JS INTERLOP
+        await JS.InvokeVoidAsync("cartInterop.showNotification", product.Name);
     }
 
     private async ValueTask DisposeAsync()
